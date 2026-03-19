@@ -221,12 +221,13 @@ function saveOverlayKey() {
 // ─── Slash command menu ─────────────────────────────────────────────────────
 
 const SLASH_COMMANDS = [
-    { cmd: '/explain', desc: 'Explain the active file in detail' },
-    { cmd: '/fix',     desc: 'Find and fix bugs in the active file' },
-    { cmd: '/test',    desc: 'Write unit tests for the active file' },
-    { cmd: '/doc',     desc: 'Add documentation comments to the active file' },
-    { cmd: '/refactor',desc: 'Refactor the active file for clarity' },
-    { cmd: '/commit',  desc: 'Write a git commit message for the changes' },
+    { cmd: '/codebase', desc: 'Send all workspace files as context' },
+    { cmd: '/explain',  desc: 'Explain the active file in detail' },
+    { cmd: '/fix',      desc: 'Find and fix bugs in the active file' },
+    { cmd: '/test',     desc: 'Write unit tests for the active file' },
+    { cmd: '/doc',      desc: 'Add documentation comments to the active file' },
+    { cmd: '/refactor', desc: 'Refactor the active file for clarity' },
+    { cmd: '/commit',   desc: 'Write a git commit message for the changes' },
 ];
 
 const SLASH_PROMPTS = {
@@ -534,6 +535,21 @@ window.addEventListener('message', event => {
 
         case 'apiKeyCleared':
             showOnboarding();
+            break;
+
+        case 'activeFileChanged': {
+            const bar = document.getElementById('file-indicator');
+            if (msg.fileName) {
+                document.getElementById('file-indicator-name').textContent = msg.fileName;
+                bar.style.display = 'flex';
+            } else {
+                bar.style.display = 'none';
+            }
+            break;
+        }
+
+        case 'contextNote':
+            addMessage(msg.text, 'system-note');
             break;
     }
 });

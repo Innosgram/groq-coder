@@ -45,14 +45,23 @@ export class ChatPanel {
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
+        vscode.window.onDidChangeActiveTextEditor((editor) => {
+            const fileName = editor ? editor.document.fileName.split(/[\\/]/).pop() || '' : null;
+            this._panel.webview.postMessage({ command: 'activeFileChanged', fileName });
+        }, null, this._disposables);
+
         this._panel.webview.onDidReceiveMessage(async (message) => {
             switch (message.command) {
 
                 case 'ready': {
-                    // Send history then load models
                     const history = this._context.globalState.get<HistoryMessage[]>('groqCoder.chatHistory', []);
                     this._panel.webview.postMessage({ command: 'historyLoaded', messages: history });
                     this._loadModels();
+                    const activeEditor = vscode.window.activeTextEditor;
+                    if (activeEditor) {
+                        const fileName = activeEditor.document.fileName.split(/[\\/]/).pop() || '';
+                        this._panel.webview.postMessage({ command: 'activeFileChanged', fileName });
+                    }
                     return;
                 }
 
@@ -99,11 +108,22 @@ export class ChatPanel {
                     this._saveToHistory({ type: 'user', text });
                     this._panel.webview.postMessage({ command: 'streamStart' });
 
+                    let extraContext: string | undefined;
+                    if (text.trim().toLowerCase().startsWith('/codebase')) {
+                        const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+                        if (workspaceFolder) {
+                            extraContext = await this._readWorkspaceFiles();
+                            this._panel.webview.postMessage({ command: 'contextNote', text: '📎 Workspace files attached as context' });
+                        } else {
+                            extraContext = '(No workspace folder is open)';
+                        }
+                    }
+
                     let fullText = '';
                     try {
                         fullText = await handleGroqRequestStreaming(text, resolvedModel, planMode, (chunk) => {
                             this._panel.webview.postMessage({ command: 'streamChunk', text: chunk });
-                        });
+                        }, extraContext);
                     } catch (e: any) {
                         fullText = `Error: ${e.message}`;
                         this._panel.webview.postMessage({ command: 'streamChunk', text: fullText });
@@ -550,6 +570,10 @@ body {
         </button>
     </div>
     <div id="messages"></div>
+    <div id="file-indicator" style="display:none; align-items:center; gap:6px; padding:3px 12px; font-size:11px; color:var(--vscode-descriptionForeground); border-top:1px solid var(--vscode-widget-border,#333); flex-shrink:0;">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"></path></svg>
+        <span id="file-indicator-name"></span> attached
+    </div>
     <div class="input-area">
         <div class="slash-menu" id="slash-menu"></div>
         <textarea id="prompt" placeholder="Ask anything… or type / for commands"></textarea>
@@ -575,6 +599,32 @@ body {
 <script src="${scriptUri}"></script>
 </body>
 </html>`;
+    }
+
+    private async _readWorkspaceFiles(): Promise<string> {
+        const files = await vscode.workspace.findFiles(
+            '**/*.{ts,js,tsx,jsx,py,html,css,json,md,php,go,rs,java,c,cpp,h,vue,svelte}',
+            '{**/node_modules/**,**/dist/**,**/out/**,**/.git/**}',
+            40
+        );
+
+        let context = '\n\n--- Workspace Files ---\n';
+        let totalChars = 0;
+        const MAX_CHARS = 60000;
+
+        for (const file of files) {
+            if (totalChars >= MAX_CHARS) { break; }
+            try {
+                const bytes = await vscode.workspace.fs.readFile(file);
+                const text = Buffer.from(bytes).toString('utf8');
+                const relativePath = vscode.workspace.asRelativePath(file);
+                const snippet = text.slice(0, 4000);
+                context += `\n### ${relativePath}\n\`\`\`\n${snippet}${text.length > 4000 ? '\n... (truncated)' : ''}\n\`\`\`\n`;
+                totalChars += snippet.length;
+            } catch { /* skip unreadable files */ }
+        }
+
+        return context;
     }
 
     public dispose() {

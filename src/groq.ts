@@ -231,7 +231,8 @@ export async function handleGroqRequestStreaming(
     prompt: string,
     model: string = 'llama-3.3-70b-versatile',
     planMode: boolean = false,
-    onChunk: (chunk: string) => void
+    onChunk: (chunk: string) => void,
+    extraContext?: string
 ): Promise<string> {
     const config = vscode.workspace.getConfiguration('groqCoder');
     const apiKey = config.get<string>('apiKey');
@@ -245,10 +246,14 @@ export async function handleGroqRequestStreaming(
     const groq = new Groq({ apiKey });
 
     let context = '';
-    const activeEditor = vscode.window.activeTextEditor;
-    if (activeEditor) {
-        const doc = activeEditor.document;
-        context = `\n\n--- Active File: ${doc.fileName} ---\n${doc.getText()}`;
+    if (extraContext) {
+        context = extraContext;
+    } else {
+        const activeEditor = vscode.window.activeTextEditor;
+        if (activeEditor) {
+            const doc = activeEditor.document;
+            context = `\n\n--- Active File: ${doc.fileName} ---\n${doc.getText()}`;
+        }
     }
 
     const fullPrompt = prompt + (context ? `\n\n${context}` : '');
