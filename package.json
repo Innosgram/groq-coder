@@ -3,10 +3,11 @@
   "displayName": "Groq Coder",
   "description": "AI coding assistant using Groq — fast models, plan mode, file creation",
   "version": "0.1.0",
-  "publisher": "your-publisher-name",
+  "icon": "media/icon128.png",
+  "publisher": "innocentmanda",
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/groq-coder"
+    "url": "https://github.com/innocentmanda/groq-coder"
   },
   "engines": {
     "vscode": "^1.80.0"
