@@ -216,8 +216,32 @@ Rules:
 - DO NOT show code in any other way when creating files
 - If you do not use this exact format, the files will NOT be saved to disk
 
-When NOT creating files (explaining, debugging, answering questions):
-- Respond directly without the FILE format.
+╔══════════════════════════════════════╗
+║  CRITICAL: EDITING EXISTING FILES   ║
+╚══════════════════════════════════════╝
+
+When asked to FIX, CHANGE, UPDATE, or MODIFY specific parts of an existing file — do NOT rewrite the whole file.
+Use this EDIT format instead:
+
+### EDIT: path/filename.ext
+FIND:
+\`\`\`
+exact existing code to replace (copy it exactly as it appears)
+\`\`\`
+REPLACE:
+\`\`\`
+new code that replaces it
+\`\`\`
+
+Rules for EDIT:
+- FIND must match the existing code character-for-character (the system does an exact string search)
+- Include enough surrounding lines (2-3) to uniquely identify the location
+- You can have multiple EDIT blocks for different locations in the same file
+- Only use FILE format (full rewrite) when creating a brand new file or when the user explicitly asks to rewrite from scratch
+- After edits, briefly explain what you changed and why
+
+When NOT creating or editing files (explaining, debugging, answering questions):
+- Respond directly without the FILE or EDIT format.
 
 If the user shares their active file context, analyze it for the most accurate answer.
 

@@ -149,7 +149,7 @@ export class ChatPanel {
                         this._panel.webview.postMessage({ command: 'streamChunk', text: fullText });
                     }
 
-                    const { text: processedText } = await this._handleFileCreation(fullText);
+                    const { text: processedText } = await this._handleFileOperations(fullText);
                     this._saveToHistory({ type: 'ai', text: processedText, model: resolvedModel });
 
                     this._panel.webview.postMessage({
@@ -181,48 +181,112 @@ export class ChatPanel {
         }
     }
 
-    private async _handleFileCreation(response: string): Promise<{ text: string; files: string[] }> {
+    private async _handleFileOperations(response: string): Promise<{ text: string }> {
         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
-        if (!workspaceFolder) { return { text: response, files: [] }; }
+        if (!workspaceFolder) { return { text: response }; }
 
-        const createdFiles: string[] = [];
+        const wsEdit = new vscode.WorkspaceEdit();
+        const summary: string[] = [];
+        const highlightUris: { uri: vscode.Uri; range?: vscode.Range }[] = [];
+        const modifiedUris: vscode.Uri[] = [];
+        let hasOps = false;
 
-        const p1 = /### FILE: (.+?)\n```[\w]*\n([\s\S]*?)```/g;
-        const p2 = /\*\*(?:[Ff]ile:\s*)?([^\*\n]+\.\w+)\*\*\s*\n```[\w]*\n([\s\S]*?)```/g;
-        const p3 = /`([^`\n]+\.\w+)`\s*\n```[\w]*\n([\s\S]*?)```/g;
-
-        for (const regex of [p1, p2, p3]) {
-            let match;
-            while ((match = regex.exec(response)) !== null) {
-                const filename = match[1].trim();
-                const content = match[2];
-                if (createdFiles.includes(filename)) { continue; }
-
-                const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, filename);
-                if (filename.includes('/')) {
-                    const parentPath = filename.split('/').slice(0, -1).join('/');
-                    await vscode.workspace.fs.createDirectory(
-                        vscode.Uri.joinPath(workspaceFolder.uri, parentPath)
-                    );
+        // ── Targeted edits: ### EDIT: file\nFIND:\n```\n...\n```\nREPLACE:\n```\n...\n```
+        const editRegex = /### EDIT: (.+?)\nFIND:\n```[^\n]*\n([\s\S]*?)```\s*\nREPLACE:\n```[^\n]*\n([\s\S]*?)```/g;
+        let m: RegExpExecArray | null;
+        while ((m = editRegex.exec(response)) !== null) {
+            const relPath = m[1].trim();
+            const findText = m[2];
+            const replaceText = m[3];
+            const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, relPath);
+            try {
+                const doc = await vscode.workspace.openTextDocument(fileUri);
+                const content = doc.getText();
+                const idx = content.indexOf(findText);
+                if (idx >= 0) {
+                    const startPos = doc.positionAt(idx);
+                    const endPos = doc.positionAt(idx + replaceText.length);
+                    wsEdit.replace(fileUri, new vscode.Range(doc.positionAt(idx), doc.positionAt(idx + findText.length)), replaceText);
+                    highlightUris.push({ uri: fileUri, range: new vscode.Range(startPos, endPos) });
+                    modifiedUris.push(fileUri);
+                    summary.push(`✏️ Edited \`${relPath}\``);
+                    hasOps = true;
+                } else {
+                    summary.push(`⚠️ Couldn't find the target code in \`${relPath}\` — it may have changed`);
                 }
-                await vscode.workspace.fs.writeFile(fileUri, Buffer.from(content, 'utf8'));
-                createdFiles.push(filename);
+            } catch {
+                summary.push(`⚠️ \`${relPath}\` not found`);
             }
         }
 
-        if (createdFiles.length > 0) {
-            const cleaned = response
-                .replace(/### FILE: .+?\n```[\w]*\n[\s\S]*?```/g, '')
-                .replace(/\*\*(?:[Ff]ile:\s*)?[^\*\n]+\.\w+\*\*\s*\n```[\w]*\n[\s\S]*?```/g, '')
-                .replace(/`[^`\n]+\.\w+`\s*\n```[\w]*\n[\s\S]*?```/g, '')
-                .trim();
-            return {
-                text: `${cleaned}\n\n✅ Created ${createdFiles.length} file(s) in your workspace:\n${createdFiles.map(f => `  • ${f}`).join('\n')}`,
-                files: createdFiles,
-            };
+        // ── Full file create/replace: ### FILE: file\n```\n...\n```
+        const fileRegex = /### FILE: (.+?)\n```[\w]*\n([\s\S]*?)```/g;
+        const processed = new Set<string>();
+        while ((m = fileRegex.exec(response)) !== null) {
+            const relPath = m[1].trim();
+            const content = m[2];
+            if (processed.has(relPath)) { continue; }
+            processed.add(relPath);
+            const fileUri = vscode.Uri.joinPath(workspaceFolder.uri, relPath);
+
+            if (relPath.includes('/')) {
+                const parentPath = relPath.split('/').slice(0, -1).join('/');
+                await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(workspaceFolder.uri, parentPath));
+            }
+
+            let exists = false;
+            try { await vscode.workspace.fs.stat(fileUri); exists = true; } catch { }
+
+            if (exists) {
+                const doc = await vscode.workspace.openTextDocument(fileUri);
+                const fullRange = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+                wsEdit.replace(fileUri, fullRange, content);
+                summary.push(`📝 Updated \`${relPath}\``);
+            } else {
+                wsEdit.createFile(fileUri, { overwrite: false });
+                wsEdit.insert(fileUri, new vscode.Position(0, 0), content);
+                summary.push(`✅ Created \`${relPath}\``);
+            }
+            highlightUris.push({ uri: fileUri });
+            modifiedUris.push(fileUri);
+            hasOps = true;
         }
 
-        return { text: response, files: [] };
+        if (!hasOps) { return { text: response }; }
+
+        // Apply all changes atomically — undoable with Ctrl+Z
+        await vscode.workspace.applyEdit(wsEdit);
+
+        // Save and highlight changed files
+        const highlightDecoration = vscode.window.createTextEditorDecorationType({
+            backgroundColor: new vscode.ThemeColor('diffEditor.insertedLineBackground'),
+            isWholeLine: true,
+        });
+
+        for (const { uri, range } of highlightUris) {
+            try {
+                const doc = await vscode.workspace.openTextDocument(uri);
+                await doc.save();
+                const editor = await vscode.window.showTextDocument(doc, { preview: false, preserveFocus: true });
+                const highlightRange = range ?? new vscode.Range(0, 0, Math.min(doc.lineCount - 1, 20), 0);
+                editor.setDecorations(highlightDecoration, [highlightRange]);
+                editor.revealRange(highlightRange, vscode.TextEditorRevealType.InCenter);
+            } catch { /* skip */ }
+        }
+
+        // Clear highlights after 4 seconds
+        setTimeout(() => highlightDecoration.dispose(), 4000);
+
+        const cleaned = response
+            .replace(/### EDIT: .+?\nFIND:\n```[^\n]*\n[\s\S]*?```\s*\nREPLACE:\n```[^\n]*\n[\s\S]*?```/g, '')
+            .replace(/### FILE: .+?\n```[\w]*\n[\s\S]*?```/g, '')
+            .trim();
+
+        const summaryText = summary.join('\n');
+        const footer = '\n\n💡 Changes are undoable with **Ctrl+Z**';
+        return {
+            text: cleaned ? `${cleaned}\n\n${summaryText}${footer}` : `${summaryText}${footer}`,
+        };
     }
 
     private _getHtml(webview: vscode.Webview): string {
