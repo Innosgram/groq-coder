@@ -88,8 +88,27 @@ export function selectAutoModel(prompt: string): string {
 }
 
 function getMaxTokens(model: string): number {
-    if (model.includes('8b') || model.includes('instant')) { return 8192; }
-    return 32768;
+    const limits: Record<string, number> = {
+        'llama-3.3-70b-versatile':                      32768,
+        'llama-3.1-70b-versatile':                      32768,
+        'llama-3.1-8b-instant':                         8192,
+        'llama-3.2-1b-preview':                         8192,
+        'llama-3.2-3b-preview':                         8192,
+        'llama-3.2-11b-vision-preview':                 8192,
+        'llama-3.2-90b-vision-preview':                 8192,
+        'moonshotai/kimi-k2-instruct-0905':             16384,
+        'meta-llama/llama-4-scout-17b-16e-instruct':    8192,
+        'meta-llama/llama-4-maverick-17b-128e-instruct':8192,
+        'gemma2-9b-it':                                 8192,
+        'mixtral-8x7b-32768':                           32768,
+    };
+    for (const [key, val] of Object.entries(limits)) {
+        if (model === key) { return val; }
+    }
+    // Safe fallback for unknown models
+    if (model.includes('8b') || model.includes('instant') || model.includes('scout') || model.includes('maverick')) { return 8192; }
+    if (model.includes('kimi') || model.includes('moonshot')) { return 16384; }
+    return 16384;
 }
 
 function getTemperature(prompt: string): number {
