@@ -187,7 +187,6 @@ document.getElementById('plan-btn').addEventListener('click', () => {
 // ─── Clear history ──────────────────────────────────────────────────────────
 
 document.getElementById('clear-btn').addEventListener('click', () => {
-    if (!confirm('Clear all chat history?')) { return; }
     document.getElementById('messages').innerHTML = '';
     vscode.postMessage({ command: 'clearHistory' });
     addMessage('Chat history cleared.', 'system-note');
