@@ -2,7 +2,7 @@
   "name": "groq-coder",
   "displayName": "Groq Coder",
   "description": "AI coding assistant using Groq — fast models, plan mode, file creation",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "license": "MIT",
   "icon": "media/icon128.png",
   "publisher": "innocentmanda",

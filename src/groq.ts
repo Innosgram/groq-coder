@@ -64,19 +64,60 @@ export async function validateApiKey(apiKey: string): Promise<{ valid: boolean; 
 export function selectAutoModel(prompt: string): string {
     const lower = prompt.toLowerCase();
 
-    if (/\b(entire codebase|whole project|all files|large file|long document|summarize everything)\b/.test(lower)) {
-        return 'moonshotai/kimi-k2-instruct-0905';
-    }
-    if (/\b(what is|what are|define|explain briefly|quick|simple|how does)\b/.test(lower) && lower.length < 120) {
+    // Fast model only for very short, simple questions
+    if (
+        /^(what is|what are|define|how does|who is|when was|where is)\b/.test(lower) &&
+        lower.length < 100 &&
+        !/\b(create|build|make|write|generate|implement|code|website|app|system)\b/.test(lower)
+    ) {
         return 'llama-3.1-8b-instant';
     }
-    if (/\b(website|webpage|landing|design|ui|ux|css|html|animation|beautiful|modern|creative|portfolio|dashboard)\b/.test(lower)) {
+
+    // Best creative/design model for UI and websites
+    if (/\b(website|webpage|landing|page|design|ui|ux|css|html|frontend|portfolio|dashboard|shop|ecommerce|blog|saas)\b/.test(lower)) {
         return 'llama-3.3-70b-versatile';
     }
-    if (/\b(create|build|make|implement|write|generate|develop|refactor|fix|debug)\b/.test(lower)) {
-        return 'llama-3.3-70b-versatile';
+
+    // Kimi K2 for large context tasks (codebase analysis, large files)
+    if (/\b(codebase|entire|whole project|all files|analyze|review|refactor|explain all|understand)\b/.test(lower)) {
+        return 'moonshotai/kimi-k2-instruct-0905';
     }
-    return 'moonshotai/kimi-k2-instruct-0905';
+
+    // Default to 70B for all complex tasks — best quality
+    return 'llama-3.3-70b-versatile';
+}
+
+function getMaxTokens(model: string): number {
+    if (model.includes('8b') || model.includes('instant')) { return 8192; }
+    return 32768;
+}
+
+function getTemperature(prompt: string): number {
+    const lower = prompt.toLowerCase();
+    // Lower temp for precise code generation
+    if (/\b(fix|debug|refactor|test|implement|function|class|algorithm|logic|bug|error)\b/.test(lower)) {
+        return 0.3;
+    }
+    // Medium temp for building
+    if (/\b(create|build|make|generate|write|develop)\b/.test(lower)) {
+        return 0.5;
+    }
+    // Higher temp for design/creative
+    if (/\b(design|website|ui|creative|style|theme|beautiful|modern)\b/.test(lower)) {
+        return 0.65;
+    }
+    return 0.5;
+}
+
+function isOutputTruncated(text: string, finishReason: string): boolean {
+    if (finishReason === 'length') { return true; }
+    // Unbalanced code fences = cut off mid-block
+    const fences = (text.match(/```/g) || []).length;
+    if (fences % 2 !== 0) { return true; }
+    // Ends mid-sentence with no punctuation (likely cut)
+    const trimmed = text.trimEnd();
+    if (trimmed.length > 500 && !/[.!?\`})\]>]$/.test(trimmed)) { return true; }
+    return false;
 }
 
 function buildSystemPrompt(planMode: boolean): string {
@@ -120,6 +161,40 @@ If the user asks you to read files and NO file context is provided below:
 If file context IS provided below, analyze it directly — do not ask for it again.
 
 ╔══════════════════════════════════════╗
+║  CRITICAL: COMPLETENESS & QUALITY   ║
+╚══════════════════════════════════════╝
+
+NEVER truncate output. The following are FORBIDDEN — using them will produce broken results:
+- "..." to skip code
+- "// rest of the code here" or "// ... existing code"
+- "/* continue */" or any placeholder comment
+- "[same as before]" or "[unchanged]"
+- "I'll continue in the next message" or "Part 1 of X"
+- Stopping a file before it is fully complete
+
+Every file you create must be 100% complete — all functions fully implemented, all styles written, every feature working.
+
+INCREMENTAL DELIVERY FOR LARGE TASKS:
+When a task involves multiple files or pages (e.g. multi-page website, full system), work incrementally:
+1. Output the FIRST file or component completely and correctly
+2. End with: "✅ Done — type **next** to continue with [what comes next]"
+3. When the user types "next", output the next file completely
+4. Repeat until everything is done
+
+This way each piece is high quality and complete, rather than everything being shallow.
+Exception: if the entire task fits comfortably in one response (1-2 small files), output it all at once.
+
+COMPLEX SYSTEMS: Implement every function, class, and module completely. No stubs, no TODOs, no "implement this later".
+
+MINIMUM STANDARDS for websites:
+- At least 5 distinct sections per page (hero, features, details, testimonials/gallery, footer)
+- Navigation that links to all pages
+- AT LEAST 300 lines of CSS — every element fully styled
+- Real written copy — no lorem ipsum
+- Working JavaScript interactions on every page
+- Consistent design system (same fonts, colors, spacing) across all files
+
+╔══════════════════════════════════════╗
 ║  CRITICAL: FILE CREATION FORMAT     ║
 ╚══════════════════════════════════════╝
 
@@ -140,20 +215,6 @@ Rules:
 - After ALL files, write one short sentence summarizing what was created
 - DO NOT show code in any other way when creating files
 - If you do not use this exact format, the files will NOT be saved to disk
-
-Example of correct output:
-### FILE: index.html
-\`\`\`html
-<!DOCTYPE html>
-<html>...</html>
-\`\`\`
-
-### FILE: css/style.css
-\`\`\`css
-body { margin: 0; }
-\`\`\`
-
-Created a homepage with stylesheet.
 
 When NOT creating files (explaining, debugging, answering questions):
 - Respond directly without the FILE format.
@@ -236,7 +297,7 @@ ALWAYS:
 - Choose a color palette nobody has used for this category before
 - Make scroll feel like a story unfolding
 - Produce work that looks like it cost a lot of money to design
-- Write AT LEAST 150 lines of CSS — every element must be styled
+- Write AT LEAST 300 lines of CSS — every element must be styled
 - Include JavaScript for at least: smooth scroll, scroll-triggered animations, interactive elements
 - Every section must be fully built — no empty or skeleton sections
 ${planModeInstruction}`;
@@ -273,27 +334,64 @@ export async function handleGroqRequestStreaming(
 
     const fullPrompt = prompt + (context ? `\n\n${context}` : '');
     const systemPrompt = buildSystemPrompt(planMode);
+    const maxTokens = getMaxTokens(model);
+    const temperature = getTemperature(prompt);
 
     try {
+        let fullText = '';
+        let finishReason = '';
+
         const stream = await groq.chat.completions.create({
             messages: [
                 { role: 'system', content: systemPrompt },
                 { role: 'user', content: fullPrompt },
             ],
             model,
-            max_tokens: 8192,
-            temperature: 0.7,
+            max_tokens: maxTokens,
+            temperature,
             stream: true,
         });
 
-        let fullText = '';
         for await (const chunk of stream) {
             const delta = (chunk.choices[0]?.delta as any)?.content || '';
+            const reason = chunk.choices[0]?.finish_reason;
+            if (reason) { finishReason = reason; }
             if (delta) {
                 fullText += delta;
                 onChunk(delta);
             }
         }
+
+        // Auto-continuation: keep going if output was cut off (up to 3 times)
+        let continuations = 0;
+        while (continuations < 3 && isOutputTruncated(fullText, finishReason)) {
+            continuations++;
+            finishReason = '';
+
+            const contStream = await groq.chat.completions.create({
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: fullPrompt },
+                    { role: 'assistant', content: fullText },
+                    { role: 'user', content: 'Continue EXACTLY from where you left off. Do NOT repeat anything. Do NOT add any preamble. Just continue the output seamlessly:' },
+                ],
+                model,
+                max_tokens: maxTokens,
+                temperature,
+                stream: true,
+            });
+
+            for await (const chunk of contStream) {
+                const delta = (chunk.choices[0]?.delta as any)?.content || '';
+                const reason = chunk.choices[0]?.finish_reason;
+                if (reason) { finishReason = reason; }
+                if (delta) {
+                    fullText += delta;
+                    onChunk(delta);
+                }
+            }
+        }
+
         return fullText;
     } catch (error: any) {
         const msg: string = error.message || String(error);
