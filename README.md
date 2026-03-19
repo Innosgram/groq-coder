@@ -14,10 +14,14 @@ Groq Coder integrates directly into your editor, bringing blazing-fast AI code g
 
 ## Installation
 
-You can install this extension manually using the `.vsix` package. This works exactly the same way in VS Code, Cursor, and Antigravity:
+### VS Code (Recommended)
+Install directly from the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=innocentmanda.groq-coder) — search **"Groq Coder"** in the Extensions panel.
 
-1. Download the latest `groq-coder-x.x.x.vsix` file from the [Releases](https://github.com/Innosgram/groq-coder/releases) page (or package it locally).
-2. Open your IDE (VS Code, Cursor, or Antigravity).
+### Cursor, Antigravity, and other VS Code forks
+Install manually using the `.vsix` package:
+
+1. Download the latest `groq-coder-x.x.x.vsix` file from the [Releases](https://github.com/Innosgram/groq-coder/releases) page.
+2. Open your IDE.
 3. Go to the **Extensions** panel (`Ctrl+Shift+X` or `Cmd+Shift+X` on Mac).
 4. Click the **`...`** (Views and More Actions) icon at the top right of the Extensions panel.
 5. Select **"Install from VSIX..."** and choose the downloaded file.
