@@ -109,13 +109,33 @@ export class ChatPanel {
                     this._panel.webview.postMessage({ command: 'streamStart' });
 
                     let extraContext: string | undefined;
-                    if (text.trim().toLowerCase().startsWith('/codebase')) {
+                    // /selection — inject selected text as context
+                    if (text.trim().toLowerCase().startsWith('/selection')) {
+                        const editor = vscode.window.activeTextEditor;
+                        if (editor && !editor.selection.isEmpty) {
+                            const selected = editor.document.getText(editor.selection);
+                            const fileName = editor.document.fileName.split(/[\\/]/).pop() || '';
+                            extraContext = `\n\n--- Selected code from ${fileName} ---\n\`\`\`\n${selected}\n\`\`\``;
+                            this._panel.webview.postMessage({ command: 'contextNote', text: `📎 Selected code from ${fileName} attached` });
+                        } else {
+                            this._panel.webview.postMessage({ command: 'contextNote', text: '⚠️ No text selected — highlight code in the editor first' });
+                        }
+                    }
+
+                    const lower = text.trim().toLowerCase();
+                    const wantsFiles = !extraContext && (
+                        lower.startsWith('/codebase') ||
+                        /\b(read|look at|analyze|understand|scan|check|review|explore|see)\b.{0,30}\b(codebase|my (files|code|project|repo|repository|folder)|all files|the files)\b/.test(lower) ||
+                        /\b(codebase|my (files|code|project|repo|repository))\b.{0,30}\b(read|look|analyze|understand|scan|check|review|explore)\b/.test(lower)
+                    );
+
+                    if (wantsFiles) {
                         const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
                         if (workspaceFolder) {
                             extraContext = await this._readWorkspaceFiles();
                             this._panel.webview.postMessage({ command: 'contextNote', text: '📎 Workspace files attached as context' });
                         } else {
-                            extraContext = '(No workspace folder is open)';
+                            extraContext = '(No workspace folder open — open a folder in VS Code first)';
                         }
                     }
 

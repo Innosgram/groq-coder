@@ -221,13 +221,14 @@ function saveOverlayKey() {
 // ─── Slash command menu ─────────────────────────────────────────────────────
 
 const SLASH_COMMANDS = [
-    { cmd: '/codebase', desc: 'Send all workspace files as context' },
-    { cmd: '/explain',  desc: 'Explain the active file in detail' },
-    { cmd: '/fix',      desc: 'Find and fix bugs in the active file' },
-    { cmd: '/test',     desc: 'Write unit tests for the active file' },
-    { cmd: '/doc',      desc: 'Add documentation comments to the active file' },
-    { cmd: '/refactor', desc: 'Refactor the active file for clarity' },
-    { cmd: '/commit',   desc: 'Write a git commit message for the changes' },
+    { cmd: '/codebase',  desc: 'Send all workspace files as context' },
+    { cmd: '/selection', desc: 'Send your highlighted/selected code as context' },
+    { cmd: '/explain',   desc: 'Explain the active file in detail' },
+    { cmd: '/fix',       desc: 'Find and fix bugs in the active file' },
+    { cmd: '/test',      desc: 'Write unit tests for the active file' },
+    { cmd: '/doc',       desc: 'Add documentation comments to the active file' },
+    { cmd: '/refactor',  desc: 'Refactor the active file for clarity' },
+    { cmd: '/commit',    desc: 'Write a git commit message for the changes' },
 ];
 
 const SLASH_PROMPTS = {
